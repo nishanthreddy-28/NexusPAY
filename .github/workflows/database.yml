@@ -1,0 +1,28 @@
+name: Database validation
+on: [push, pull_request, workflow_dispatch]
+jobs:
+  mysql:
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: ci-demo-password
+        ports: ['3306:3306']
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -pci-demo-password"
+          --health-interval=5s --health-timeout=5s --health-retries=30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install MySQL client
+        run: sudo apt-get update && sudo apt-get install -y mysql-client
+      - name: Build and verify
+        env:
+          MYSQL_PWD: ci-demo-password
+        run: |
+          set -euo pipefail
+          for script in sql/0{1,2,3,4}_*.sql; do
+            mysql --host=127.0.0.1 --user=root < "$script"
+          done
+          mysql --host=127.0.0.1 --user=root < tests/verify.sql
+          mysql --host=127.0.0.1 --user=root < sql/05_queries.sql

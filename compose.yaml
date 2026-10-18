@@ -1,0 +1,20 @@
+services:
+  db:
+    image: mysql:8.4
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?Set MYSQL_ROOT_PASSWORD in .env}
+    ports:
+      - "127.0.0.1:3307:3306"
+    volumes:
+      - nexuspay_data:/var/lib/mysql
+      - ./sql/01_schema.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
+      - ./sql/02_routines.sql:/docker-entrypoint-initdb.d/02_routines.sql:ro
+      - ./sql/03_views.sql:/docker-entrypoint-initdb.d/03_views.sql:ro
+      - ./sql/04_seed.sql:/docker-entrypoint-initdb.d/04_seed.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", 'MYSQL_PWD="$$MYSQL_ROOT_PASSWORD" mysql -uroot -e "SELECT COUNT(*) FROM nexuspay.expense_shares"']
+      interval: 5s
+      timeout: 5s
+      retries: 30
+volumes:
+  nexuspay_data:
