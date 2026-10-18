@@ -1,97 +1,139 @@
-<p align="center"><img src="docs/assets/banner.svg" alt="NexusPAY — relational payment system" width="100%"></p>
+# NexusPAY - Digital Payment Database
 
-<p align="center">
-<img alt="MySQL 8.4" src="https://img.shields.io/badge/MySQL-8.4-00758F?logo=mysql&logoColor=white">
-<img alt="Database" src="https://img.shields.io/badge/Engine-InnoDB-20b2aa">
-<img alt="Project type" src="https://img.shields.io/badge/Project-DBMS-635bff">
-</p>
+NexusPAY is a DBMS project for storing payment records, bank account details, beneficiaries, and shared expenses using MySQL.
 
-# NexusPAY
+The project looks at a simple payment scenario: a customer pays a merchant, the payment is recorded, and the account balances are updated. If the payment was for a group expense, each person's share can be stored separately. It also includes tables for scheduled payments, disputes, and notifications.
 
-A database-first digital payment project built around customers, merchants, bank accounts, shared expenses, and dispute management. NexusPAY demonstrates relational modeling, referential integrity, atomic money movement, reusable reporting, and meaningful SQL validation.
+## Problem statement
 
-**Scope:** an educational MySQL implementation with fictional INR balances. It does not connect to banks or payment networks and has no web interface or authentication service.
+Payment information is connected to several other records. A payment needs a payer, a receiving merchant, bank accounts, an amount, and a date. A shared expense also needs a group and the amount owed by each member. Storing these details without clear relationships can lead to duplicate records or payments linked to the wrong person.
 
-## What it demonstrates
+The aim of this project is to design these relationships and use SQL constraints and transactions to keep the records consistent.
 
-- **Atomic merchant payments:** account row locks, ownership validation, balance checks, rollback on failure, and a unique request key that rejects duplicate requests without a second debit.
-- **Relational integrity:** 15 InnoDB tables, foreign keys, unique constraints, positive amounts, and at most one primary account per user.
-- **Shared expenses:** group membership, expense records, and individual settlement shares.
-- **Payment operations:** saved beneficiaries, scheduled instructions, admin-reviewed disputes, and payment notifications.
-- **SQL analytics:** spending and revenue views, joins, aggregates, correlated subqueries, window functions, and indexed history lookups.
-- **Repeatable setup:** Docker Compose and a MySQL 8.4 GitHub Actions validation job.
+## Tools used
 
-## Start locally
+- MySQL 8.4
+- SQL for table creation, sample data, queries, views, procedures, and triggers
+- MySQL command-line client or MySQL Workbench to run the scripts
 
-Requires Docker Desktop with Compose. Run from the repository root:
+The scripts were tested on MySQL 8.4.11. Docker is also available as an optional way to run the database.
 
-```bash
-cp .env.example .env
-# Edit .env and choose a local database password.
-docker compose up -d --wait
-docker compose exec db sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysql -uroot nexuspay'
+## Database design
+
+The database has 15 tables:
+
+- `users`, `customers`, `merchants`, `admins` - user details and their respective profiles.
+- `bank_accounts`, `categories`, `transactions` - accounts, payment categories, and merchant payments.
+- `beneficiaries`, `scheduled_payments` - saved recipients and payment schedules.
+- `split_groups`, `group_members`, `split_expenses`, `expense_shares` - groups, expenses, and individual shares.
+- `disputes`, `notifications` - payment complaints and user messages.
+
+The [original ER diagram](docs/ER_diagram.pdf) shows the initial design. The [database design notes](docs/design.md) explain the relationships used in the SQL, including the separate table for individual expense shares. Field descriptions are in the [data dictionary](docs/data-dictionary.md).
+
+## Files
+
+```text
+sql/
+  01_schema.sql       Creates the database and tables
+  02_routines.sql     Payment procedure and schedule ownership triggers
+  03_views.sql        Customer spending, merchant revenue, and pending shares
+  04_seed.sql         Sample records
+  05_queries.sql      Queries for retrieving and analysing the records
+  06_demo.sql         A payment example with before-and-after balances
+
+docs/
+  ER_diagram.pdf      Initial ER diagram
+  design.md           Relationships and design decisions
+  data-dictionary.md  Description of each table
+  sample-output.txt   Output from running the payment example
+
+tests/
+  verify.sql          Checks for payments and failed transactions
 ```
 
-Inside MySQL:
+## How to run
 
-```sql
-SELECT * FROM customer_spending;
-SELECT * FROM merchant_revenue;
-SELECT * FROM outstanding_shares;
-CALL pay_merchant('my-payment-002', 1, 1, 'DEMO-C001', 'DEMO-M001', 125.00);
-```
-
-After initialization, Nisha has **INR 9,400**, Arjun has **INR 8,000**, and Campus Cafe has **INR 600**. Arjun's outstanding lunch share is **INR 300**.
-
-Run the demonstration queries and checks:
-
-```bash
-docker compose exec -T db sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysql -uroot' < sql/05_queries.sql
-docker compose exec -T db sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysql -uroot' < tests/verify.sql
-```
-
-Initialization runs only on an empty database volume. `docker compose down` preserves data. To deliberately erase the local demo database and rebuild it, run `docker compose down -v`, then start again. Never use that reset on data you need.
-
-### Existing MySQL server
-
-Use MySQL 8.4 or later on a fresh instance. Run these in order; enter your password when prompted:
+Start with a MySQL server where the `nexuspay` database does not already contain project tables. Open a terminal in this repository and run the following commands in order. Enter your MySQL password when prompted.
 
 ```bash
 mysql -u root -p < sql/01_schema.sql
 mysql -u root -p < sql/02_routines.sql
 mysql -u root -p < sql/03_views.sql
 mysql -u root -p < sql/04_seed.sql
+mysql -u root -p < sql/05_queries.sql
+```
+
+In MySQL Workbench, open each file and execute the complete script in the same order. Refresh the Schemas panel to see `nexuspay`.
+
+Run the schema and sample-data scripts once for a new database. They are not migration scripts and will report errors if the tables or sample records already exist.
+
+## Example: paying for a group lunch
+
+The sample data includes two customers, Nisha and Arjun, and a merchant called Campus Cafe.
+
+Nisha starts with Rs. 10,000 and pays Rs. 600 to the cafe. Her balance becomes Rs. 9,400, and the cafe receives Rs. 600. The lunch is split equally: Nisha's Rs. 300 share is marked as settled, and Arjun's Rs. 300 share is pending.
+
+To view the records:
+
+```sql
+USE nexuspay;
+
+SELECT * FROM customer_spending;
+SELECT * FROM merchant_revenue;
+SELECT * FROM outstanding_shares;
+```
+
+To make another payment of Rs. 125:
+
+```sql
+CALL pay_merchant(
+    'my-payment-002', 1, 1,
+    'DEMO-C001', 'DEMO-M001', 125.00
+);
+```
+
+The first argument is a unique reference for the payment request. Using it again causes an error and does not debit the account twice. Call this procedure outside an existing transaction because it starts and commits its own transaction.
+
+For a complete before-and-after example, run this once after loading the sample data:
+
+```bash
+mysql -u root -p < sql/06_demo.sql
+```
+
+The results are saved in [sample-output.txt](docs/sample-output.txt). The demo adds a payment, so run the verification script on a separate, freshly seeded database.
+
+## DBMS concepts covered
+
+Primary and foreign keys connect the tables. Unique and check constraints prevent duplicate emails, repeated payment references, and invalid amounts. Joins retrieve payment details across customers and merchants. Aggregate functions and views calculate spending and revenue. The query file also includes a subquery, a window function, and an `EXPLAIN` example for the payment-history index.
+
+The payment procedure uses a transaction so that the debit, credit, payment record, and notification either all succeed or all roll back. It checks account ownership and available balance before completing the payment. Triggers check that a scheduled payment uses a beneficiary saved by that customer.
+
+To run the checks on a freshly seeded database:
+
+```bash
 mysql -u root -p < tests/verify.sql
 ```
 
-## Repository guide
+This script adds one Rs. 25 payment and checks the resulting balances. It also checks duplicate requests, insufficient balance, incorrect account ownership, and incorrect beneficiary ownership. A successful run prints a `PASS` message. Recreate the demo database before running it again.
 
-```text
-NexusPAY/
-├── sql/
-│   ├── 01_schema.sql       # Tables, constraints, relationships, indexes
-│   ├── 02_routines.sql     # Atomic payment procedure and ownership triggers
-│   ├── 03_views.sql        # Spending, revenue, and settlement reports
-│   ├── 04_seed.sql         # Fictional, deterministic demonstration dataset
-│   └── 05_queries.sql      # DBMS presentation and analytics queries
-├── tests/verify.sql        # Integrity and payment rollback assertions
-├── docs/
-│   ├── ER_diagram.pdf      # Original supplied design reference
-│   ├── design.md           # Implemented model and design decisions
-│   └── assets/banner.svg
-├── .github/workflows/database.yml
-├── compose.yaml
-└── .env.example
+## Current limitations
+
+This repository contains the database part of the project. There is no frontend or connection to a real bank. Scheduled payments are stored but are not executed automatically. Marking an expense share as settled does not transfer money.
+
+Some rules still need application-level checks, such as ensuring that all shares belong to group members and add up to the expense total. These are described in the design notes.
+
+## Optional Docker setup
+
+```bash
+cp .env.example .env
+# Set a local password in .env before starting.
+docker compose up -d --wait
 ```
 
-## Design and learning notes
+Connect to `127.0.0.1:3307` as `root` using the password in `.env`. The setup loads the schema, routines, views, and sample data automatically on the first start. Run `docker compose down` to stop it while keeping the data. `docker compose down -v` deletes the local database volume; use it only when deliberately resetting the demo.
 
-Read [the implemented model](docs/design.md) for relationships, normalization decisions, and limitations, and the [data dictionary](docs/data-dictionary.md) for entity definitions. The [original ER diagram](docs/ER_diagram.pdf) is preserved as a reference; the SQL corrects its circular group/expense dependency and separates per-person shares.
-
-The payment routine owns its transaction boundary: call it outside an existing transaction. Duplicate request keys raise an error; they do not return a cached success response. Applications should distinguish a duplicate from a failed new payment and reconcile the original request. Deadlocks may still require bounded retries using the same request key.
-
-Scheduled payments store instructions only; no background scheduler or person-to-person transfer engine is included. Split settlement status is bookkeeping rather than an automatic bank transfer. Authentication, production authorization, currency conversion, immutable accounting journals, fraud detection, and external payment processing are future extensions. Direct table writes can bypass routine-level payment rules, so a real application must restrict its database privileges.
+The repository also includes a GitHub Actions workflow that loads the SQL and runs the verification script on MySQL 8.4.
 
 ## License
 
-[MIT](LICENSE).
+[MIT](LICENSE)

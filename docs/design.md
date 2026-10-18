@@ -1,6 +1,6 @@
 # Database design
 
-The executable schema in `sql/01_schema.sql` is the source of truth. The supplied ER diagram is the original conceptual reference.
+The tables in `sql/01_schema.sql` are based on the payment system shown in the original ER diagram. A few relationships were changed during implementation, mainly around group expenses and scheduled payments.
 
 ## Relationships
 
@@ -34,16 +34,15 @@ erDiagram
  admins o|--o{ disputes : reviews
 ```
 
-## Corrections to the supplied SQL
+## Design decisions
 
-- Create referenced tables first and use consistent lower-case plural names.
-- Remove the circular split-group-to-expense foreign key. A group owns many expenses; each expense references one group.
-- Use one auto-increment identifier per table and a composite membership primary key without auto-increment.
-- Make customer references integers and point beneficiaries to their own table.
-- Fix misspelled references and the trailing comma in disputes.
-- Store credential hashes only in users; remove duplicate admin passwords.
-- Represent each participant's share in expense_shares rather than repeating expense totals.
-- Keep scheduled person-to-person instructions separate from merchant payment transactions, since no person-to-person execution engine exists here.
+User details are stored in `users`. Customer, merchant, and admin details are kept in separate tables, with a unique `user_id` linking each profile to a user. This avoids storing the same email and password details in several places.
+
+A split group can have several expenses, so `split_expenses` references the group. The group does not need to reference an expense in return. `group_members` uses the group and customer IDs together as its primary key, which prevents the same customer from joining a group twice.
+
+The total cost belongs to `split_expenses`, while each person's amount belongs to `expense_shares`. For example, a Rs. 600 lunch can have two Rs. 300 shares without repeating the total cost in each share record.
+
+A beneficiary is another customer saved by a customer. Scheduled payments reference these saved beneficiaries. Merchant payments are stored separately in `transactions`; this implementation does not execute customer-to-customer transfers.
 
 ## Normalization and integrity
 
@@ -51,7 +50,7 @@ User identity, customer details, merchant details, categories, and memberships a
 
 The database enforces foreign keys, unique email and request keys, positive money amounts, nonnegative balances, basic date consistency, schedule beneficiary ownership, and one primary account per user. Payment account ownership is checked inside the procedure. Foreign keys default to restrictive deletion to preserve referenced history.
 
-Some cross-row rules remain application responsibilities: user role must agree with its subtype; group initiators should join their group; shares must belong to group members and sum to the expense total; expense totals and payers must match the linked payment; only the payer should raise a dispute. The demo satisfies these rules, and the query file includes a share-total reconciliation query. They are not all enforced by the schema.
+The SQL does not enforce every business rule. The following checks would need to be added in an application: user role must agree with its subtype; group initiators should join their group; shares must belong to group members and sum to the expense total; expense totals and payers must match the linked payment; only the payer should raise a dispute. The demo satisfies these rules, and the query file includes a share-total reconciliation query. They are not all enforced by the schema.
 
 ## Payment transaction
 
@@ -63,7 +62,7 @@ Some cross-row rules remain application responsibilities: user role must agree w
 6. Debit the payer, credit the merchant, and insert a notification.
 7. Commit. Any SQL exception rolls back the whole operation.
 
-All amounts use DECIMAL(15,2) and represent INR. Failed payments leave no transaction record; a production service would need a separate attempt/audit stream. This is an account-balance simulation rather than a double-entry ledger.
+All amounts use DECIMAL(15,2) and represent INR. Failed payments are rolled back and do not leave a transaction record. The project updates account balances directly; it does not maintain a separate accounting ledger.
 
 ## Demonstration sequence
 
