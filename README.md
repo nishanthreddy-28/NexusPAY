@@ -2,15 +2,16 @@
 
 **Digital Payments and Transaction Coordination Database System**
 
-A MySQL database for customer and merchant payments, bank and wallet transfers, recurring payment instructions, group expenses, and disputes. This repository contains the database implementation of the NexusPay project described in the SRS.
+A MySQL database for customer and merchant payments, bank and wallet transfers, recurring payment instructions, group expenses, and disputes. The project brings payment records, balances, expense shares, and dispute decisions into one relational database.
 
 ## Project documents
 
 - [SRS and UML diagrams](docs/SRS.pdf): requirements, actors, and activity diagrams for payments, splits, schedules, disputes, and bank-to-wallet transfers.
 - [Database design and normalization notes](docs/NexusPay_DB_design.pdf): the original normalization analysis.
 - [Original ER diagram](ER_diagram.pdf): the initial 14-entity model.
+- [Project thumbnail](assets/nexuspay-thumbnail.png).
 
-The original documents are preserved. The implemented schema has **16 tables**: individual shares and transaction-state events are separate relations. `funding_sources` extends the original bank-account concept to cover wallets; `bank_accounts` remains available as a view. Platform and bank admins share the `admins` table with different scopes.
+The schema has **16 tables**: individual shares and transaction-state events are separate relations. `funding_sources` extends the original bank-account concept to cover wallets; `bank_accounts` remains available as a view. Platform and bank admins share the `admins` table with different scopes.
 
 ## Files and setup
 
@@ -118,19 +119,15 @@ erDiagram
  transactions o|--o{ notifications : concerns
 ```
 
-## Notes on normalization and LLD
+## Design notes
 
 Membership uses `(group_id, customer_id)` as its key; `joined_at` describes that membership. Shares use `(split_id, customer_id)`. The expense total comes from the linked payment, rather than being repeated in each share. Schedule ownership comes from its beneficiary. User profile data and category descriptions are stored in their respective tables.
 
-The normalization PDF uses several different field names and describes earlier hypothetical schemas. Adding a surrogate key alone does not prove 2NF; all candidate keys and functional dependencies must be considered. A foreign key to another table does not by itself violate BCNF. The PDF is a design reference, not a formal BCNF proof of this physical schema. Balances are maintained totals, and the generated primary-source column is an implementation constraint.
+## Scope
 
-The SRS use-case diagram identifies actors and their operations. Its activity diagrams provide validation branches and success/failure flows for LLD. They can guide future `PaymentService`, `ScheduleService`, `SplitService`, and `DisputeService` classes. Class responsibilities, method contracts, and sequence diagrams still need to be designed; the SRS contents list a sequence diagram, but no populated sequence-diagram page is included.
+This is a database project with simulated balances. Login, bank integration, beneficiary verification, notification delivery, and a frontend are outside the current implementation. The sample credentials are disabled placeholders. Scheduled payments run when a backend job calls the procedure; the scripts do not enable a scheduler.
 
-## Remaining application work
-
-The database models the SRS workflows, but it is not the complete full-stack application. Login, password hashing and verification, caller authorization, beneficiary verification with a bank, actual bank settlement and reconciliation, notification delivery, and the frontend remain application work. Sample credentials are disabled placeholders.
-
-A backend job must call the schedule procedure; automatic execution is not enabled by these scripts. Bank log views need caller-specific filtering and are not access-control boundaries. Before connecting an application, configure least-privilege accounts: do not grant direct financial-table writes or execution of internal helpers. SQL admin IDs describe reviewers; they do not authenticate a caller. The SRS performance, availability, and external integration goals have not been established by this database demo.
+An application must authenticate callers, restrict actions by role, and filter bank logs for the relevant bank admin. Before connecting it, configure database permissions so financial operations use the public procedures and internal helpers cannot be called directly. These SQL scripts do not provide a complete authorization system or a real bank ledger.
 
 The SQL was tested on MySQL 8.4.11, including concurrent requests, duplicate references, balance and spending limits, immutable history, schedule failures, split acceptance and settlement, rounding, and dispute refunds.
 
